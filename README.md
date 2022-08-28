@@ -83,3 +83,6 @@ struct publish_message {
 2. Configuration
 3. Eventual consistency:
 3a. I'm replaying historic messages, and a fresh message comes in. What can happen?
+4. How do we fan messages in and out of this log?
+4a. as a subscriber (process) I should receive a notification when an event happens in my topic
+4b. as a publisher (process) I should be able to emit event notifications to my topic

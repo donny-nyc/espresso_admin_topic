@@ -107,6 +107,39 @@ static void *threadFunc(void *arg) {
   }
 }
 
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
+static void *connection(void *arg) {
+  struct addrinfo hints, *res0;
+
+  memset(&hints, 0, sizeof(hints));
+
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_flags = AI_PASSIVE;
+
+  int err = getaddrinfo("127.0.0.1", "6060", &hints, &res0);
+
+  int s = socket(res0->ai_family, res0->ai_socktype, res0->ai_protocol);
+
+  if(bind(s, res0->ai_addr, res0->ai_addrlen) < 0) {
+    perror("unable to bind");
+    exit(1);
+  }
+
+  char buffer[1000];
+  while(read(s, &buffer, 1000) > 0) {
+    printf("buffer: %s\n", buffer);
+    bzero(buffer, 1000);
+  } 
+
+  freeaddrinfo(res0);
+
+  return 0;
+}
+
 int main(void) {
   const char *file = "tmp.txt";
 
@@ -126,6 +159,9 @@ int main(void) {
     printf("created worker %d\n", i);
   }
 
+  pthread_t net_c;
+ 
+ int x  = pthread_create(&net_c, NULL, connection, NULL);
 
   pthread_t t1;
   void *res;
@@ -139,7 +175,7 @@ int main(void) {
   uint64_t checksum = 0;
 
   while(1) {
-    //sleep(1);
+    sleep(1);
     struct publish_message pm;
 
     pm.topic = topic++;
