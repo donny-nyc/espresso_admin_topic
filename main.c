@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -24,7 +25,48 @@
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
+static pthread_mutex_t pml_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t handle_cond = PTHREAD_COND_INITIALIZER;
+
+// first consumer should read new messages off of the topic,
+// and queue them up for their configured handler to process
+//
+// Handler should block until notified that a message is available
+static struct publish_message_list pml;
+
+static void *handleMessage(void *arg) {
+  while(1) {
+    int s = pthread_mutex_lock(&pml_mtx);
+
+    if(s) {
+      perror(strerror(errno));
+    }
+
+    s = pthread_cond_wait(&handle_cond, &pml_mtx);
+
+    if(s) {
+      perror(strerror(errno));
+    }
+
+    struct publish_message *pm;
+
+    pm = pop_message(&pml);
+
+    if(pm) {
+      printf("handling message: %llu, %d, %llu\n", pm->message_id,
+          pm->topic, pm->checksum);
+    } else {
+      printf("no message\n");
+    }
+
+    free(pm);
+
+    pthread_mutex_unlock(&pml_mtx);
+  }
+}
+
 static void *threadFunc(void *arg) {
+  printf("started consumer\n");
   uint64_t messages = 0;
   char *path = (char *)arg;
   FILE *f;
@@ -39,12 +81,24 @@ static void *threadFunc(void *arg) {
       fclose(f);
     }
 
-    struct publish_message pm;
+    struct publish_message pm; // = (struct publish_message *)malloc(sizeof(struct publish_message));
     while(fread(&pm, sizeof(struct publish_message), 1, f) > 0) {
 
-      printf("message: %llu, %d, %llu, %llu\n", messages, pm.topic, pm.message_id, pm.checksum);
       messages++;
-      sleep(1);
+
+      pthread_mutex_lock(&pml_mtx);
+      struct publish_message *pm2 = (struct publish_message *)malloc(sizeof(struct publish_message));
+
+      bzero(pm2, sizeof(struct publish_message));
+      pm2->message_id = pm.message_id;
+      pm2->checksum = pm.checksum;
+      pm2->topic = pm.topic;
+
+      int len = push_message(&pml, pm2);
+
+      pthread_mutex_unlock(&pml_mtx);
+
+      pthread_cond_signal(&handle_cond);
     }
 
     fclose(f);
@@ -55,38 +109,42 @@ static void *threadFunc(void *arg) {
 
 int main(void) {
   const char *file = "tmp.txt";
-  /*
-  int fd = open(file, O_CREAT | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); 
-  if(fd == -1) {
-    perror(strerror(errno));
-    return 1;
+
+  pml.length = 0;
+
+  pthread_t *available_workers[3];
+  pthread_t *busy_workers[3];
+
+  for(int i = 0; i < 3; i++) {
+    available_workers[i] = (pthread_t *)malloc(sizeof(pthread_t));
+    int s = pthread_create(available_workers[i], NULL, handleMessage, NULL);
+    if(s) {
+      perror(strerror(errno));
+      exit(1);
+    }
+
+    printf("created worker %d\n", i);
   }
-  */
+
 
   pthread_t t1;
   void *res;
   int s = pthread_create(&t1, NULL, threadFunc, (void *)file);
+
+  sleep(1);
+  // pthread_cond_signal(&cond);
   
+  uint32_t topic = 0;
+  uint64_t message_id = 0;
+  uint64_t checksum = 0;
+
   while(1) {
+    //sleep(1);
     struct publish_message pm;
 
-    uint32_t topic;
-    uint64_t message_id;
-    uint64_t checksum;
-
-    printf("topic: ");
-    scanf("%d", &topic);
-
-    printf("message_id: ");
-    scanf("%llu", &message_id);
-
-    printf("checksum: ");
-    scanf("%llu", &checksum);
-    
-
-    pm.topic = topic;
-    pm.message_id = message_id;
-    pm.checksum = checksum;
+    pm.topic = topic++;
+    pm.message_id = message_id++;
+    pm.checksum = checksum++;
 
 
     int s = pthread_mutex_lock(&mtx);
@@ -95,38 +153,14 @@ int main(void) {
     int res = fwrite(&pm, sizeof(struct publish_message), 1, f);
     int success = fclose(f);
 
+    printf("wrote message: %llu\n", pm.message_id);
+
     s = pthread_mutex_unlock(&mtx);
 
     s = pthread_cond_signal(&cond);
   }
 
   pthread_join(t1, &res);
-
-  /*
-  pm.topic = 1;
-  pm.checksum = 2;
-  pm.message_id = 3;
-
-  // write(fd, &pm, sizeof(struct publish_message));
-  int res = fwrite(&pm, sizeof(struct publish_message), 1, f);
-
-  // int success = close(fd);
-  int success = fclose(f);
-  if(success == -1) {
-    perror(strerror(errno));    
-    return 1;
-  }
-
-//  int fd2 = open(file, O_RDONLY); 
-  FILE *f2 = fopen(file, "r");
-
-  struct publish_message pm2;
-
-//  int res = read(fd2, &pm2, sizeof(struct publish_message));
-  int r = fread(&pm2, sizeof(struct publish_message), 1, f2);
-
-  printf("topic: %d, checksum: %llu, message_id: %llu\n", pm2.topic, pm2.checksum, pm2.message_id);
-  */
 
   return 0;
 }
