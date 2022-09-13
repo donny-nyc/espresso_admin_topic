@@ -22,6 +22,11 @@
 
 #include "messages.h"
 
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <netdb.h>
+
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
@@ -35,6 +40,27 @@ static pthread_cond_t handle_cond = PTHREAD_COND_INITIALIZER;
 static struct publish_message_list pml;
 
 static void *handleMessage(void *arg) {
+  struct addrinfo hints, *res, *res0;
+
+  bzero(&hints, sizeof(struct addrinfo));
+
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_flags = AI_PASSIVE;
+
+  int err = getaddrinfo("127.0.0.1", NULL, &hints, &res0);
+
+  int sx = socket(res0->ai_family, res0->ai_socktype, res0->ai_protocol);
+
+  for(res = res0; res; res = res->ai_next) {
+    if(bind(sx, res0->ai_addr, res0->ai_addrlen) < 0) {
+      perror("bind failed");
+      continue;
+    } else {
+      break;
+    }
+  }
+
   while(1) {
     int s = pthread_mutex_lock(&pml_mtx);
 
@@ -52,17 +78,36 @@ static void *handleMessage(void *arg) {
 
     pm = pop_message(&pml);
 
+    pthread_mutex_unlock(&pml_mtx);
+
     if(pm) {
       printf("handling message: %llu, %d, %llu\n", pm->message_id,
           pm->topic, pm->checksum);
+      struct addrinfo dest;
+      bzero(&dest, sizeof(struct sockaddr));
+
+      dest.ai_family = PF_UNSPEC;
+      dest.ai_socktype = SOCK_DGRAM;
+      hints.ai_flags = AI_PASSIVE;
+
+      struct sockaddr sad;
+
+      err = getaddrinfo("127.0.0.1", "4545", &dest, &res0);
+
+      int r = sendto(sx, "hello world\n", sizeof("hello world\n"), 0, res0->ai_addr, res0->ai_addrlen);
+      if(r < 0) {
+        perror(strerror(errno));
+      }
+
     } else {
       printf("no message\n");
     }
 
     free(pm);
 
-    pthread_mutex_unlock(&pml_mtx);
   }
+
+  freeaddrinfo(res0);
 }
 
 static void *threadFunc(void *arg) {
@@ -107,10 +152,8 @@ static void *threadFunc(void *arg) {
   }
 }
 
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <netdb.h>
+#include "client.h"
+
 static void *connection(void *arg) {
   struct addrinfo hints, *res0;
 
@@ -130,9 +173,72 @@ static void *connection(void *arg) {
   }
 
   char buffer[1000];
+  // struct publish_message pm;
+  struct message_t req;
   while(read(s, &buffer, 1000) > 0) {
     printf("buffer: %s\n", buffer);
+
+    //sscanf(buffer, "%u;%llu;%llu;\n", &pm.topic, &pm.checksum, &pm.message_id);
+    int scanned = sscanf(buffer, "%u;%500c\n", &req.type, req.body);
     bzero(buffer, 1000);
+
+    int s = pthread_mutex_lock(&mtx);
+    if(s) {
+      perror(strerror(errno));
+    }
+
+    FILE *f = fopen("tmp.txt", "a");
+    int res = fwrite(&req, sizeof(struct message_t), 1, f);
+    int success = fclose(f);
+
+    if(scanned < 2) {
+      printf("invalid msg. Scanned %d\n", scanned);
+    } else {
+      printf("received: %s\n", req.body);
+    }
+    // printf("client wrote message: %llu\n", pm.message_id);
+
+    s = pthread_mutex_unlock(&mtx);
+
+    s = pthread_cond_signal(&cond);
+
+    if (req.type == COMMAND) {
+      struct command_message cm;
+
+      int count = 0;
+      sscanf(req.body, "%u;%u;%n", &cm.type, &cm.body_len, &count);
+
+      printf("command %d bytes\n", count);
+
+      cm.body = (char *)malloc(sizeof(char) * cm.body_len);
+
+      sscanf(req.body + count, "%s", cm.body);
+
+      // printf("New command: %u, len: %u\n", cm.type, cm.body_len);
+      switch(cm.type) {
+        case ADD_TOPIC_SUBSCRIPTION:
+          printf("Add Destination. %s\n", cm.body);
+          struct add_topic_subscription_t ats;
+
+          break;
+        case DELETE_TOPIC_SUBSCRIPTION:
+          printf("Delete Destination\n");
+          break;
+        case REPLACE_TOPIC_SUBSCRIPTION:
+          printf("RELACE Destination\n");
+          break;
+        case ADD_TOPIC:
+          printf("Add Topic");
+          break;
+        case DELETE_TOPIC:
+          printf("Delete Topic");
+          break;
+      }
+      free(cm.body);
+    } else if (req.type == EVENT) {
+
+    }
+
   } 
 
   freeaddrinfo(res0);
@@ -140,8 +246,12 @@ static void *connection(void *arg) {
   return 0;
 }
 
+
 int main(void) {
   const char *file = "tmp.txt";
+
+  // enum request_type t;
+  // enum request_type t = BROADCAST;
 
   pml.length = 0;
 
@@ -175,7 +285,7 @@ int main(void) {
   uint64_t checksum = 0;
 
   while(1) {
-    sleep(1);
+    /*
     struct publish_message pm;
 
     pm.topic = topic++;
@@ -194,6 +304,7 @@ int main(void) {
     s = pthread_mutex_unlock(&mtx);
 
     s = pthread_cond_signal(&cond);
+    */
   }
 
   pthread_join(t1, &res);
