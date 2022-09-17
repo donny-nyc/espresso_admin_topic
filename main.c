@@ -248,11 +248,14 @@ static void *connection(void *arg) {
 
 
 int main(void) {
+  setvbuf(stdout, NULL, _IONBF, 0);
+  printf("starting\n");
+
   const char *file = "tmp.txt";
 
   // enum request_type t;
   // enum request_type t = BROADCAST;
-
+  
   pml.length = 0;
 
   pthread_t *available_workers[3];
@@ -262,6 +265,7 @@ int main(void) {
     available_workers[i] = (pthread_t *)malloc(sizeof(pthread_t));
     int s = pthread_create(available_workers[i], NULL, handleMessage, NULL);
     if(s) {
+      printf("something broke\n");
       perror(strerror(errno));
       exit(1);
     }
@@ -273,9 +277,21 @@ int main(void) {
  
  int x  = pthread_create(&net_c, NULL, connection, NULL);
 
+ if(x) {
+  printf("something broke\n");
+  perror(strerror(errno));
+  exit(1);
+ }
+
   pthread_t t1;
   void *res;
   int s = pthread_create(&t1, NULL, threadFunc, (void *)file);
+
+  if(s) {
+    printf("something broke\n");
+    perror(strerror(errno));
+    exit(1);
+  }
 
   sleep(1);
   // pthread_cond_signal(&cond);

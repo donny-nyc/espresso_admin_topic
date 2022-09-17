@@ -1,9 +1,13 @@
-FROM gcc:latest as compiler
-WORKDIR /build/
+FROM gcc:latest AS compiler
+WORKDIR /build
 ADD main.c publish_message_list.c messages.h client.h .
-RUN gcc -Wall --static main.c publish_message_list.c -lpthread -o main && pwd && ls
+RUN gcc --static main.c publish_message_list.c -lpthread -o main
+#COPY hello.c .
+#RUN gcc --static hello.c -o main
 
+#FROM ubuntu:latest
 FROM scratch
-WORKDIR /build/
-COPY --from=compiler /build/main ./main
-CMD ["./main"]
+COPY --from=compiler /build/main /
+
+EXPOSE 6060
+ENTRYPOINT ["./main"]
