@@ -25,6 +25,11 @@ struct add_topic_subscription_t {
   uint32_t topic_id;
 };
 
+struct add_topic_t {
+  uint32_t name_len;
+  char *name;
+};
+
 /*
 struct request_t {
   uint32_t topic_id;

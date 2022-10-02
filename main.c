@@ -26,12 +26,17 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <time.h>
+
+#include "topic.h"
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t pml_mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t handle_cond = PTHREAD_COND_INITIALIZER;
+
+static struct topic_map_t *topic_map;
 
 // first consumer should read new messages off of the topic,
 // and queue them up for their configured handler to process
@@ -44,11 +49,13 @@ static void *handleMessage(void *arg) {
 
   bzero(&hints, sizeof(struct addrinfo));
 
-  hints.ai_family = PF_UNSPEC;
+  hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_flags = AI_PASSIVE;
 
-  int err = getaddrinfo("127.0.0.1", NULL, &hints, &res0);
+  int err = getaddrinfo("172.24.0.3", "49494", &hints, &res0);
+  if(err) {
+    perror(gai_strerror(err));
+  }
 
   int sx = socket(res0->ai_family, res0->ai_socktype, res0->ai_protocol);
 
@@ -83,6 +90,7 @@ static void *handleMessage(void *arg) {
     if(pm) {
       printf("handling message: %llu, %d, %llu\n", pm->message_id,
           pm->topic, pm->checksum);
+      /*
       struct addrinfo dest;
       bzero(&dest, sizeof(struct sockaddr));
 
@@ -92,11 +100,14 @@ static void *handleMessage(void *arg) {
 
       struct sockaddr sad;
 
-      err = getaddrinfo("127.0.0.1", "4545", &dest, &res0);
+      err = getaddrinfo("0.0.0.0", "49494", &dest, &res0);
+      */
 
       int r = sendto(sx, "hello world\n", sizeof("hello world\n"), 0, res0->ai_addr, res0->ai_addrlen);
       if(r < 0) {
         perror(strerror(errno));
+      } else {
+        printf("sent %d bytes\n", r);
       }
 
     } else {
@@ -154,6 +165,9 @@ static void *threadFunc(void *arg) {
 
 #include "client.h"
 
+char *port;
+char *host;
+
 static void *connection(void *arg) {
   struct addrinfo hints, *res0;
 
@@ -163,7 +177,14 @@ static void *connection(void *arg) {
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_PASSIVE;
 
-  int err = getaddrinfo("127.0.0.1", "6060", &hints, &res0);
+  int err = getaddrinfo(host, port, &hints, &res0);
+
+  if(err) {
+    printf("%s\n", gai_strerror(err));
+    exit(1);
+  }
+
+  printf("Listening on port %s at %s\n", port, host);
 
   int s = socket(res0->ai_family, res0->ai_socktype, res0->ai_protocol);
 
@@ -229,6 +250,27 @@ static void *connection(void *arg) {
           break;
         case ADD_TOPIC:
           printf("Add Topic");
+          struct add_topic_t atr;
+
+          printf("Request Body: %s\n", cm.body);
+
+          int count = 0;
+          sscanf(cm.body, "%u;%n", &atr.name_len, &count);
+
+          atr.name = (char *)malloc(atr.name_len * sizeof(char));
+
+          sscanf(cm.body + count, "%s", atr.name);
+
+          printf("name(len=%u): %s\n", atr.name_len, atr.name);
+
+          struct topic_t *topic = (struct topic_t *)malloc(sizeof(struct topic_t));
+
+          strcpy(topic->name, atr.name);
+
+          strcpy(topic->id, generate_id());
+
+          set(topic_map, topic);
+
           break;
         case DELETE_TOPIC:
           printf("Delete Topic");
@@ -246,12 +288,27 @@ static void *connection(void *arg) {
   return 0;
 }
 
+char *get_env_or_default(char *name, char *def) {
+  char *value = getenv(name);
+
+  return value ? value : def;
+}
+
 
 int main(void) {
+  srand(time(NULL));
+  port = get_env_or_default("LISTEN_PORT_NO", "6060");
+
+  host = get_env_or_default("LISTEN_HOST", "0.0.0.0");
+
   setvbuf(stdout, NULL, _IONBF, 0);
   printf("starting\n");
 
+  const char *topic_file = "topics.esp";
+
   const char *file = "tmp.txt";
+
+  topic_map = init_map(16);
 
   // enum request_type t;
   // enum request_type t = BROADCAST;
@@ -300,8 +357,8 @@ int main(void) {
   uint64_t message_id = 0;
   uint64_t checksum = 0;
 
+  /*
   while(1) {
-    /*
     struct publish_message pm;
 
     pm.topic = topic++;
@@ -320,8 +377,8 @@ int main(void) {
     s = pthread_mutex_unlock(&mtx);
 
     s = pthread_cond_signal(&cond);
-    */
   }
+  */
 
   pthread_join(t1, &res);
 

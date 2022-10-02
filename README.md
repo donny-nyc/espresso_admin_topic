@@ -15,6 +15,14 @@ A log-based, pub-sub service for asynchronous processing.
 
 #### Sidecar API
 
+#### Channels
+We expose a simple CRUD API for Channels. How are these data types persisted?
+Do we introduce another file-based storage solution?
+
+```
+id,name,destination_host,destination_port
+```
+
 #### Client Registry
 Clients that have completed a handshake with the server are registered with a
 unique identifier. This ID is returned to the client when the handshake is
