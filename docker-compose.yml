@@ -1,6 +1,6 @@
 version: "3.9"
 services:
-  topic:
+  channel:
     build:
       context: .
       dockerfile: ./Dockerfile

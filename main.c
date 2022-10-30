@@ -29,6 +29,7 @@
 #include <time.h>
 
 #include "topic.h"
+#include "channel.h"
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -43,6 +44,8 @@ static struct topic_map_t *topic_map;
 //
 // Handler should block until notified that a message is available
 static struct publish_message_list pml;
+
+
 
 static void *handleMessage(void *arg) {
   struct addrinfo hints, *res, *res0;
@@ -61,12 +64,14 @@ static void *handleMessage(void *arg) {
 
   for(res = res0; res; res = res->ai_next) {
     if(bind(sx, res0->ai_addr, res0->ai_addrlen) < 0) {
-      perror("bind failed");
+      perror("Trying the next bind option");
       continue;
     } else {
       break;
     }
   }
+
+  printf("handle message bind success\n");
 
   while(1) {
     int s = pthread_mutex_lock(&pml_mtx);
@@ -103,7 +108,8 @@ static void *handleMessage(void *arg) {
       err = getaddrinfo("0.0.0.0", "49494", &dest, &res0);
       */
 
-      int r = sendto(sx, "hello world\n", sizeof("hello world\n"), 0, res0->ai_addr, res0->ai_addrlen);
+      const char* msg = "{\"message\":\"hello world\"}";
+      int r = sendto(sx, msg, strlen(msg), 0, res0->ai_addr, res0->ai_addrlen);
       if(r < 0) {
         perror(strerror(errno));
       } else {
@@ -304,15 +310,14 @@ int main(void) {
   setvbuf(stdout, NULL, _IONBF, 0);
   printf("starting\n");
 
-  const char *topic_file = "topics.esp";
+  const char *channels_file = "channels.bin";
+
+  load_channels(channels_file);
 
   const char *file = "tmp.txt";
 
   topic_map = init_map(16);
 
-  // enum request_type t;
-  // enum request_type t = BROADCAST;
-  
   pml.length = 0;
 
   pthread_t *available_workers[3];
@@ -351,34 +356,10 @@ int main(void) {
   }
 
   sleep(1);
-  // pthread_cond_signal(&cond);
   
   uint32_t topic = 0;
   uint64_t message_id = 0;
   uint64_t checksum = 0;
-
-  /*
-  while(1) {
-    struct publish_message pm;
-
-    pm.topic = topic++;
-    pm.message_id = message_id++;
-    pm.checksum = checksum++;
-
-
-    int s = pthread_mutex_lock(&mtx);
-
-    FILE *f = fopen(file, "a");
-    int res = fwrite(&pm, sizeof(struct publish_message), 1, f);
-    int success = fclose(f);
-
-    printf("wrote message: %llu\n", pm.message_id);
-
-    s = pthread_mutex_unlock(&mtx);
-
-    s = pthread_cond_signal(&cond);
-  }
-  */
 
   pthread_join(t1, &res);
 
