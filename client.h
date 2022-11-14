@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 
 enum message_type { COMMAND=1, EVENT };
@@ -19,10 +20,6 @@ struct command_message {
   enum command_t type;
   uint32_t body_len;
   char *body;  
-};
-
-struct add_topic_subscription_t {
-  uint32_t topic_id;
 };
 
 struct add_topic_t {

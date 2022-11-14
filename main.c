@@ -31,6 +31,8 @@
 #include "topic.h"
 #include "channel.h"
 
+#include "add_topic_subscription.h"
+
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
@@ -242,10 +244,23 @@ static void *connection(void *arg) {
       sscanf(req.body + count, "%s", cm.body);
 
       // printf("New command: %u, len: %u\n", cm.type, cm.body_len);
+      count = 0;
       switch(cm.type) {
         case ADD_TOPIC_SUBSCRIPTION:
           printf("Add Destination. %s\n", cm.body);
-          struct add_topic_subscription_t ats;
+          struct add_topic_subscription_params_t ats;
+
+          sscanf(cm.body, "%u;%u;%n", &ats.topic_id, &ats.host_url_len, &count);
+
+          ats.host_url = (char *)malloc(ats.host_url_len * sizeof(char));
+
+          sscanf(cm.body + count, "%s", ats.host_url);
+
+          // find topic (if it exists)
+          //
+          // Append the subscription
+          
+          int res = add_topic_subscription(&ats);
 
           break;
         case DELETE_TOPIC_SUBSCRIPTION:
@@ -260,7 +275,6 @@ static void *connection(void *arg) {
 
           printf("Request Body: %s\n", cm.body);
 
-          int count = 0;
           sscanf(cm.body, "%u;%n", &atr.name_len, &count);
 
           atr.name = (char *)malloc(atr.name_len * sizeof(char));
@@ -312,7 +326,7 @@ int main(void) {
 
   const char *channels_file = "channels.bin";
 
-  load_channels(channels_file);
+  // load_channels(channels_file);
 
   const char *file = "tmp.txt";
 
